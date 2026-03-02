@@ -30,6 +30,7 @@ LLM_REQUEST_TIMEOUT = int(os.getenv("LLM_REQUEST_TIMEOUT", "120"))
 DEFAULT_CHUNK_TOKEN_LIMIT = int(os.getenv("CHUNK_TOKEN_LIMIT", "2000"))
 SLIDING_WINDOW_WORDS = int(os.getenv("SLIDING_WINDOW_WORDS", "800"))
 MAX_CRITIC_RETRIES = int(os.getenv("MAX_CRITIC_RETRIES", "3"))
+DEFAULT_RECURSIVE_STEPS = int(os.getenv("RECURSIVE_CONTINUATION_STEPS", "2"))
 
 
 def ensure_project_dirs() -> None:

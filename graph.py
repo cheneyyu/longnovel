@@ -16,7 +16,7 @@ from agents import (
     StyleAgent,
 )
 from chunker import chunk_text
-from config import MAX_CRITIC_RETRIES
+from config import DEFAULT_RECURSIVE_STEPS, MAX_CRITIC_RETRIES
 from database import DatabaseManager
 from llm import LLMRouter
 from preprocess import clean_source_novel
@@ -49,6 +49,7 @@ class XianxiaPipeline:
         user_style: str = "",
         critic_retries: int = MAX_CRITIC_RETRIES,
         max_output_chars: int | None = None,
+        recursive_steps: int = DEFAULT_RECURSIVE_STEPS,
     ) -> PipelineOutput:
         cleaned_source = clean_source_novel(source_text)
         chunks = chunk_text(cleaned_source)
@@ -82,6 +83,37 @@ class XianxiaPipeline:
                 if len(merged) >= max_output_chars:
                     break
 
+        if chunks and recursive_steps > 0:
+            for step in range(recursive_steps):
+                if max_output_chars is not None:
+                    merged = "\n\n".join(item.revised for item in results)
+                    if len(merged) >= max_output_chars:
+                        break
+
+                synthetic_chunk = chunk_text(memory.chunk_summaries[-1] if memory.chunk_summaries else chunks[-1].text)
+                context_chunk = synthetic_chunk[0] if synthetic_chunk else chunks[-1]
+                role_notes = self.character_agent.update_memory(context_chunk, memory)
+                previous = results[-1].revised if results else context_chunk.text
+                draft = self.adapt.generate_recursive(memory, role_notes, previous)
+                critique = self.critic.evaluate(draft)
+                revised = draft
+
+                retries = 0
+                while critique.startswith("NEEDS_REVISION") and retries < critic_retries:
+                    revised = self.revisor.revise(revised, critique, memory)
+                    critique = self.critic.evaluate(revised)
+                    retries += 1
+
+                memory.chunk_summaries.append(self.continuity_agent.summarize(revised))
+                results.append(
+                    GenerationResult(
+                        chunk_index=len(chunks) + step + 1,
+                        draft=draft,
+                        critique=critique,
+                        revised=revised,
+                    )
+                )
+
         return PipelineOutput(chunk_results=results)
 
 
@@ -91,8 +123,14 @@ def run_pipeline_to_file(
     db: DatabaseManager,
     user_style: str = "",
     max_output_chars: int | None = None,
+    recursive_steps: int = DEFAULT_RECURSIVE_STEPS,
 ) -> PipelineOutput:
-    output = XianxiaPipeline(db).run(source_text, user_style=user_style, max_output_chars=max_output_chars)
+    output = XianxiaPipeline(db).run(
+        source_text,
+        user_style=user_style,
+        max_output_chars=max_output_chars,
+        recursive_steps=recursive_steps,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     merged_text = output.merged_text
     if max_output_chars is not None:
