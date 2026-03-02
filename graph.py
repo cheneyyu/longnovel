@@ -48,6 +48,7 @@ class XianxiaPipeline:
         source_text: str,
         user_style: str = "",
         critic_retries: int = MAX_CRITIC_RETRIES,
+        max_output_chars: int | None = None,
     ) -> PipelineOutput:
         cleaned_source = clean_source_novel(source_text)
         chunks = chunk_text(cleaned_source)
@@ -76,6 +77,11 @@ class XianxiaPipeline:
                 )
             )
 
+            if max_output_chars is not None:
+                merged = "\n\n".join(item.revised for item in results)
+                if len(merged) >= max_output_chars:
+                    break
+
         return PipelineOutput(chunk_results=results)
 
 
@@ -84,8 +90,12 @@ def run_pipeline_to_file(
     output_path: Path,
     db: DatabaseManager,
     user_style: str = "",
+    max_output_chars: int | None = None,
 ) -> PipelineOutput:
-    output = XianxiaPipeline(db).run(source_text, user_style=user_style)
+    output = XianxiaPipeline(db).run(source_text, user_style=user_style, max_output_chars=max_output_chars)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(output.merged_text, encoding="utf-8")
+    merged_text = output.merged_text
+    if max_output_chars is not None:
+        merged_text = merged_text[:max_output_chars]
+    output_path.write_text(merged_text, encoding="utf-8")
     return output
