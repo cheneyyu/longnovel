@@ -28,7 +28,9 @@ Multi-agent Python pipeline for transforming a source novel into a Chinese web-n
 2. 可选设置环境变量：
    - `OPENAI_API_KEY`
    - `OPENAI_BASE_URL`
-   - `OPENAI_MODEL_NAME`
+   - `OPENAI_FAST_MODEL_NAME`
+   - `OPENAI_LONG_MODEL_NAME`
+   - `OPENAI_TEMPERATURE`（可选，建议 `1.0`）
 
 ```bash
 python database.py
@@ -52,19 +54,30 @@ python main.py
 !python -m pip install -U pip
 !python database.py
 
-# 可选：写入你的输入与风格
+# 1) 设置 OpenAI 兼容 API（同一个 base url，下挂两个模型）
+import os
+os.environ["OPENAI_API_KEY"] = "<your-api-key>"
+os.environ["OPENAI_BASE_URL"] = "https://<your-openai-compatible-endpoint>/v1"
+os.environ["OPENAI_FAST_MODEL_NAME"] = "<fast-cheap-model>"
+os.environ["OPENAI_LONG_MODEL_NAME"] = "<long-context-pro-model>"
+os.environ["OPENAI_TEMPERATURE"] = "1.0"
+
+# 2) 你自己准备大体量小说 input/novel.txt（语言不限）
 !mkdir -p input
 !python - <<'PY'
 from pathlib import Path
-Path('input/novel.txt').write_text('A detective follows a trail of clues across two cities.', encoding='utf-8')
-Path('input/style.txt').write_text('都市悬疑、节奏紧凑、每段有明确推进。', encoding='utf-8')
+Path('input/style.txt').write_text('高张力冲突、章节结尾留钩子、人物关系持续升级。', encoding='utf-8')
+print('请自行上传 input/novel.txt（可用 Colab 左侧文件面板上传）。')
 PY
 
+# 3) 运行：角色卡、情节推进、连续性摘要都通过 LLM 生成
 !python main.py
-!sed -n '1,80p' output/result_xianxia.txt
+!sed -n '1,120p' output/result_xianxia.txt
 ```
 
-> 如果你在 Colab 里使用 API，请先在 Runtime 环境中设置 `OPENAI_API_KEY`。
+> 说明：此流程会同时使用 fast/cheap 模型（风格整理、角色卡更新、连续性摘要）和 long/pro 模型（正文改写）。
+
+> 如果你的原文来自 Project Gutenberg 等站点，流水线会自动清理版权头、目录、页码等噪声后再分块。
 
 ## 如何满足“多个 agent + 连贯上下文”
 

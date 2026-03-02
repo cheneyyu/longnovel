@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from chunker import TextChunk
 from database import DatabaseManager
+from llm import LLMRouter
 
 
 @dataclass(slots=True)
@@ -29,26 +30,30 @@ class GenerationResult:
 class StyleAgent:
     """Converts user style preference into a normalized writing guide."""
 
+    def __init__(self, llm: LLMRouter):
+        self.llm = llm
+
     def create_style_guide(self, user_style: str = "") -> str:
-        base = (
-            "使用中文第三人称叙事，长篇连载节奏，章节结尾保留悬念；"
-            "描写兼顾动作、心理与环境，段落长度有变化。"
-        )
+        base = "中文第三人称、仙侠网文节奏、冲突递进、结尾留钩子、人物关系持续升级。"
         custom = user_style.strip()
-        if not custom:
-            return base
-        if len(custom) < 20:
-            return f"{base} 用户补充风格：{custom}（其余由系统补全）。"
-        return f"{base} 用户详细风格：{custom}"
+        fallback = f"{base} 用户风格：{custom}" if custom else base
+        return self.llm.fast_chat(
+            system_prompt="你是网文改编总编。仅输出中文，不要解释。",
+            user_prompt=(
+                f"将以下需求整理为80字以内写作规则，偏仙侠改编：{custom or '未提供'}。"
+                "必须包含：叙事视角、节奏、情绪张力、章节收束方式。"
+            ),
+            fallback=fallback,
+        )
 
 
 class CharacterAgent:
     """Tracks characters from DB and current chunk to maintain role consistency."""
 
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: DatabaseManager, llm: LLMRouter):
         characters = db.fetch_characters()
         self.character_rows = characters
-        self.name_map = {row["original_name"]: row["xianxia_name"] for row in characters}
+        self.llm = llm
 
     def update_memory(self, chunk: TextChunk, memory: StoryMemory) -> list[str]:
         notes: list[str] = []
@@ -57,18 +62,31 @@ class CharacterAgent:
             adapted = row["xianxia_name"]
             if re.search(rf"\b{re.escape(original)}\b", chunk.text):
                 memory.known_characters[adapted] = row
-                notes.append(f"{adapted}({row['sect']}, {row['cultivation_level']}, {row['status']})")
-        return notes
+                notes.append(f"{adapted}({row['sect']},{row['cultivation_level']},{row['status']})")
+
+        fallback = notes if notes else ["沿用上一段人物目标与冲突关系"]
+        role_card = self.llm.fast_chat(
+            system_prompt="你是角色统筹编辑。仅输出中文要点，每行一句。",
+            user_prompt=(
+                f"人物库：{self.character_rows}\n"
+                f"当前片段（截断）：{chunk.text[:800]}\n"
+                f"已有角色记忆：{list(memory.known_characters.keys())}\n"
+                "生成1-2条角色卡更新，强调动机、关系变化、潜在风险。"
+            ),
+            fallback="\n".join(fallback),
+        )
+        return [line.strip("-• ") for line in role_card.splitlines() if line.strip()] or fallback
 
 
 class AdaptationAgent:
-    """Rule-based generator that applies term mapping and story memory."""
+    """LLM generator with term mapping and continuity context."""
 
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: DatabaseManager, llm: LLMRouter):
         world_map = db.fetch_world_map()
         characters = db.fetch_characters()
         self.term_map = {row["original_term"]: row["xianxia_term"] for row in world_map}
         self.name_map = {row["original_name"]: row["xianxia_name"] for row in characters}
+        self.llm = llm
 
     def generate(self, chunk: TextChunk, memory: StoryMemory, role_notes: list[str]) -> str:
         text = chunk.text
@@ -77,38 +95,63 @@ class AdaptationAgent:
         for original, replaced in sorted(self.term_map.items(), key=lambda i: len(i[0]), reverse=True):
             text = re.sub(rf"\b{re.escape(original)}\b", replaced, text)
 
-        continuity = "；".join(role_notes) if role_notes else "延续上一章叙事焦点"
-        prefix = (
-            f"[Chapter Fragment {chunk.index}]\n"
-            f"[Style Guide] {memory.style_guide}\n"
-            f"[Role Continuity] {continuity}\n"
+        continuity = "；".join(role_notes) if role_notes else "沿用上一段叙事焦点"
+        context_text = chunk.context[:1200] if chunk.context else ""
+        fallback_excerpt = text[:900]
+        fallback = (
+            "【离线草稿】未检测到可用LLM，以下为待改写片段摘要：\n"
+            f"{fallback_excerpt}\n"
+            "（请配置 OPENAI_API_KEY / OPENAI_BASE_URL / 模型名后自动生成中文仙侠改写）"
         )
-        if chunk.context:
-            prefix += f"[Context Window] {chunk.context}\n"
-        return f"{prefix}{text}"
+
+        return self.llm.long_chat(
+            system_prompt=(
+                "你是中文仙侠网文改编作者。"
+                "只输出正文，不要输出任何标签、说明、英文、目录、版权声明、页码。"
+                "遇到版权前言/目录/元信息时直接忽略，仅保留剧情叙事。"
+            ),
+            user_prompt=(
+                f"写作规则：{memory.style_guide}\n"
+                f"角色连续性：{continuity}\n"
+                f"上文窗口：{context_text}\n"
+                f"待改写片段：{text[:4000]}\n"
+                "要求：\n"
+                "1) 输出中文仙侠风正文；\n"
+                "2) 有明确情节推进和人物冲突；\n"
+                "3) 结尾留悬念；\n"
+                "4) 不要出现[Chapter Fragment]等标记。"
+            ),
+            fallback=fallback,
+        )
 
 
 class ContinuityAgent:
     """Produces compact memory summary for each generated fragment."""
 
+    def __init__(self, llm: LLMRouter):
+        self.llm = llm
+
     def summarize(self, revised_text: str) -> str:
         clean = revised_text.replace("\n", " ").strip()
-        if len(clean) <= 100:
-            return clean
-        return clean[:100] + "..."
+        fallback = clean[:100] + "..." if len(clean) > 100 else clean
+        return self.llm.fast_chat(
+            system_prompt="你是剧情连续性助手，仅输出中文一句话。",
+            user_prompt=f"请用60字内总结本段的事件推进、角色变化和未解悬念：{clean[:1500]}",
+            fallback=fallback,
+        )
 
 
 class CriticAgent:
-    """Deterministic checks to enforce style and continuity markers."""
+    """Deterministic checks to enforce output quality."""
 
     def evaluate(self, draft: str) -> str:
         issues: list[str] = []
-        required_markers = ("[Chapter Fragment", "[Style Guide]", "[Role Continuity]")
-        for marker in required_markers:
-            if marker not in draft:
-                issues.append(f"Missing marker: {marker}")
-        if len(draft.split()) < 30:
-            issues.append("Draft may be too short; consider richer narration.")
+        if len(draft.strip()) < 120:
+            issues.append("Draft too short; expand scene details.")
+        if re.search(r"\[Chapter Fragment|\[Style Guide|\[Role Continuity", draft):
+            issues.append("Contains internal markers; remove them from final prose.")
+        if re.search(r"(?i)project gutenberg|table of contents|release date|ebook", draft):
+            issues.append("Contains metadata/license text; remove non-story content.")
         if not issues:
             return "PASS: no critical issues found."
         return "NEEDS_REVISION: " + " ".join(issues)
@@ -122,12 +165,8 @@ class RevisionAgent:
             return draft
 
         revised = draft
-        if "Missing marker: [Style Guide]" in critique:
-            revised = f"[Style Guide] {memory.style_guide}\n" + revised
-        if "Missing marker: [Role Continuity]" in critique:
-            revised = "[Role Continuity] 延续人物目标与关系\n" + revised
-        if "Missing marker: [Chapter Fragment" in critique and "[Chapter Fragment" not in revised:
-            revised = "[Chapter Fragment]\n" + revised
-        if "richer narration" in critique:
-            revised += "\n灵气翻涌，旧誓与新局在夜色中交错，下一步选择将改写众人命途。"
-        return revised
+        revised = re.sub(r"\[(Chapter Fragment|Style Guide|Role Continuity)[^\n]*\n?", "", revised)
+        revised = re.sub(r"(?im)^.*(Project Gutenberg|Release date|Table of Contents|Credits).*$", "", revised)
+        if "Draft too short" in critique:
+            revised += "\n夜色沉沉，众人各怀心机，表面的平静下已暗潮汹涌。"
+        return revised.strip()
