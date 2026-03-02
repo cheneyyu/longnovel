@@ -29,9 +29,15 @@ Artifacts generated:
 - `data/xianxia_state.db`
 - `data/xianxia_state.json`
 
-## Next Modules (Planned)
+## Implemented Modules
 
-- `chunker.py`
-- `agents.py`
-- `graph.py`
-- `main.py`
+- `chunker.py`: sentence-based chunking with configurable token budget and sliding-window context.
+- `agents.py`: deterministic adaptation / critique / revision agents as an offline baseline.
+- `graph.py`: orchestration pipeline (`XianxiaPipeline`) for chunk-level processing.
+- `main.py`: CLI entrypoint that boots DB, reads input, runs the pipeline, and writes output.
+
+## Run Full Pipeline
+
+```bash
+python main.py
+```
