@@ -2,7 +2,7 @@
 
 Multi-agent Python pipeline for transforming a source novel into a Chinese web-novel adaptation chapter by chapter.
 
-> 当前仓库默认用“西方小说 -> 仙侠风”作为示例，但**不限制仙侠**。你可以输入任意语言小说，并通过风格提示词生成长篇连载改编文本。
+> 当前仓库使用“跨语言小说改编”为示例，不限定题材。你可以输入任意语言小说，并通过风格提示词生成长篇连载改编文本。
 
 ## Current Progress
 
@@ -41,6 +41,31 @@ python main.py
 - `input/style.txt`（风格描述，可写“简单描述”或“详细描述”）
 - `output/result_xianxia.txt`（改编结果）
 
+## Colab 示例
+
+在 Google Colab 中可以直接运行以下单元：
+
+```python
+!git clone https://github.com/<your-org>/longnovel.git
+%cd longnovel
+
+!python -m pip install -U pip
+!python database.py
+
+# 可选：写入你的输入与风格
+!mkdir -p input
+!python - <<'PY'
+from pathlib import Path
+Path('input/novel.txt').write_text('A detective follows a trail of clues across two cities.', encoding='utf-8')
+Path('input/style.txt').write_text('都市悬疑、节奏紧凑、每段有明确推进。', encoding='utf-8')
+PY
+
+!python main.py
+!sed -n '1,80p' output/result_xianxia.txt
+```
+
+> 如果你在 Colab 里使用 API，请先在 Runtime 环境中设置 `OPENAI_API_KEY`。
+
 ## 如何满足“多个 agent + 连贯上下文”
 
 - 章节被切分为 chunk，并附带滑动窗口上下文。
@@ -48,7 +73,7 @@ python main.py
 - 角色状态由数据库与 `StoryMemory.known_characters` 共同维护。
 - 连续性由 `[Context Window]` 和 `chunk_summaries` 记忆保证。
 
-## 自定义背景（不只是仙侠）
+## 自定义背景
 
 虽然字段名为 `xianxia_term` / `xianxia_name`，本质是“改编后映射值”：
 
