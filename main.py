@@ -1,10 +1,17 @@
-"""CLI entrypoint for the longnovel adaptation pipeline."""
+"""CLI entrypoint for the longnovel pipeline."""
 
 from __future__ import annotations
 
-from config import RESULT_NOVEL_PATH, SOURCE_NOVEL_PATH, STYLE_PROMPT_PATH, ensure_project_dirs
+from config import (
+    PLAN_PATH,
+    RESULT_NOVEL_PATH,
+    SETTING_PATH,
+    SOURCE_NOVEL_PATH,
+    STYLE_PROMPT_PATH,
+    ensure_project_dirs,
+)
 from database import bootstrap_database
-from graph import run_pipeline_to_file
+from graph import run_pipeline_to_files
 
 
 def main() -> None:
@@ -23,9 +30,18 @@ def main() -> None:
 
     source_text = SOURCE_NOVEL_PATH.read_text(encoding="utf-8")
     user_style = STYLE_PROMPT_PATH.read_text(encoding="utf-8")
-    output = run_pipeline_to_file(source_text, RESULT_NOVEL_PATH, db, user_style=user_style)
-    print(f"Generated {len(output.chunk_results)} chunk(s).")
-    print(f"Result saved to: {RESULT_NOVEL_PATH}")
+    output = run_pipeline_to_files(
+        source_text,
+        RESULT_NOVEL_PATH,
+        SETTING_PATH,
+        PLAN_PATH,
+        db,
+        user_style=user_style,
+    )
+    print(f"Generated {len(output.chunk_results)} chapter chunk(s).")
+    print(f"Setting saved to: {SETTING_PATH}")
+    print(f"Plan saved to: {PLAN_PATH}")
+    print(f"Novel saved to: {RESULT_NOVEL_PATH}")
 
 
 if __name__ == "__main__":

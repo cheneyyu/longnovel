@@ -2,33 +2,30 @@
 
 Multi-agent Python pipeline for transforming a source novel into a Chinese web-novel adaptation chapter by chapter.
 
-> 当前仓库默认用“西方小说 -> 仙侠风”作为示例，但**不限制仙侠**。你可以输入任意语言小说，并通过风格提示词生成长篇连载改编文本。
+## 当前版本管线（你提出的三段式）
 
-## Current Progress
+1. **novel in**：输入原著 `input/novel.txt` + 用户描述 `input/style.txt`。
+2. **设定生成**：`SettingAgent` 综合原著与用户要求，输出统一设定到 `output/setting.txt`。
+3. **计划生成**：`PlanningAgent` 基于原著+设定输出总纲，并按“每 1 万字约 500 字细纲”生成到 `output/plan.txt`。
+4. **novel out**：`ChapterWriterAgent` 按 chunk 逐章生成正文，`CriticAgent`/`RevisionAgent` 做一致性与质量兜底，输出 `output/result_novel.txt`。
 
-已实现多 agent 协作链路（可离线运行）：
+## OpenAI 调用与依赖
 
-- `StyleAgent`：读取简单/详细风格描述并补全为统一写作准则。
-- `CharacterAgent`：从角色库检索并在每个 chunk 更新角色记忆，保证角色身份连续。
-- `AdaptationAgent`：执行术语映射与正文生成。
-- `ContinuityAgent`：产出分段摘要写入记忆，供后续上下文连贯。
-- `CriticAgent` + `RevisionAgent`：检查并修补结构标记与叙事丰富度。
+项目已接入 `openai` 官方 Python SDK（见 `llm.py`）。
 
-核心模块：
+- 环境变量：
+  - `OPENAI_API_KEY`
+  - `OPENAI_BASE_URL`（可选）
+  - `OPENAI_MODEL_NAME`（默认 `gpt-4o-mini`）
+- 依赖安装：
 
-- `config.py`: 路径、API配置、运行参数。
-- `database.py`: SQLite + JSON 状态管理（世界词表、角色设定）。
-- `chunker.py`: 分块 + 滑动窗口上下文。
-- `graph.py`: 多 agent 编排与执行。
-- `main.py`: CLI 入口。
+```bash
+pip install -r requirements.txt
+```
+
+> 若未提供 API key，系统会走 deterministic fallback（可运行但仅用于调试，不代表真实写作质量）。
 
 ## Quick Start
-
-1. Python 3.10+
-2. 可选设置环境变量：
-   - `OPENAI_API_KEY`
-   - `OPENAI_BASE_URL`
-   - `OPENAI_MODEL_NAME`
 
 ```bash
 python database.py
@@ -37,31 +34,18 @@ python main.py
 
 首次运行会自动创建：
 
-- `input/novel.txt`（示例原文）
-- `input/style.txt`（风格描述，可写“简单描述”或“详细描述”）
-- `output/result_xianxia.txt`（改编结果）
+- `input/novel.txt`
+- `input/style.txt`
+- `output/setting.txt`
+- `output/plan.txt`
+- `output/result_novel.txt`
 
-## 如何满足“多个 agent + 连贯上下文”
+## 代码结构
 
-- 章节被切分为 chunk，并附带滑动窗口上下文。
-- 每个 chunk 按顺序经过 `Style -> Character -> Adapt -> Critic/Revision -> Continuity Summary`。
-- 角色状态由数据库与 `StoryMemory.known_characters` 共同维护。
-- 连续性由 `[Context Window]` 和 `chunk_summaries` 记忆保证。
-
-## 自定义背景（不只是仙侠）
-
-虽然字段名为 `xianxia_term` / `xianxia_name`，本质是“改编后映射值”：
-
-- 直接修改 `data/xianxia_state.db` 中的 `WorldMap` 与 `Characters`
-- 或修改 `database.py` 中 `seed_mock_data()` 的种子数据
-
-例如赛博朋克：
-
-- `Treasure -> Quantum Vault`
-- `Sect -> Megacorp Division`
-
-## Run Full Pipeline
-
-```bash
-python main.py
-```
+- `llm.py`: OpenAI SDK 封装与 fallback。
+- `agents.py`: 设定/计划/写作/角色连续性/审校 Agent。
+- `graph.py`: 三段式管线编排。
+- `config.py`: 路径、API配置、运行参数。
+- `database.py`: SQLite + JSON 状态管理（术语映射、角色设定）。
+- `chunker.py`: 分块 + 滑动窗口上下文。
+- `main.py`: CLI 入口。
