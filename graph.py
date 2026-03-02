@@ -16,7 +16,12 @@ from agents import (
     StyleAgent,
 )
 from chunker import chunk_text
-from config import DEFAULT_RECURSIVE_STEPS, MAX_CRITIC_RETRIES
+from config import (
+    DEFAULT_PRE_SPLIT_CHARS,
+    DEFAULT_PRE_SUMMARY_CHARS,
+    DEFAULT_RECURSIVE_STEPS,
+    MAX_CRITIC_RETRIES,
+)
 from database import DatabaseManager
 from llm import LLMRouter
 from preprocess import clean_source_novel
@@ -50,8 +55,17 @@ class XianxiaPipeline:
         critic_retries: int = MAX_CRITIC_RETRIES,
         max_output_chars: int | None = None,
         recursive_steps: int = DEFAULT_RECURSIVE_STEPS,
+        pre_split_chars: int = DEFAULT_PRE_SPLIT_CHARS,
+        pre_summary_chars: int = DEFAULT_PRE_SUMMARY_CHARS,
+        verbose_preprocess: bool = True,
     ) -> PipelineOutput:
         cleaned_source = clean_source_novel(source_text)
+        cleaned_source = self._compress_large_source(
+            cleaned_source,
+            split_chars=pre_split_chars,
+            summary_chars=pre_summary_chars,
+            verbose=verbose_preprocess,
+        )
         chunks = chunk_text(cleaned_source)
         results: list[GenerationResult] = []
         memory = StoryMemory(style_guide=self.style_agent.create_style_guide(user_style))
@@ -116,6 +130,49 @@ class XianxiaPipeline:
 
         return PipelineOutput(chunk_results=results)
 
+    def _compress_large_source(self, text: str, split_chars: int, summary_chars: int, verbose: bool) -> str:
+        if not text.strip() or len(text) <= split_chars:
+            if verbose:
+                print(
+                    f"[preprocess] 输入长度 {len(text)} 字符，未达到 {split_chars} 阈值，跳过预拆分总结。"
+                )
+            return text
+
+        parts = [text[i : i + split_chars] for i in range(0, len(text), split_chars)]
+        summaries: list[str] = []
+        if verbose:
+            print(
+                f"[preprocess] 检测到超大输入，共 {len(text)} 字符，将按每段 {split_chars} 字符拆分为 {len(parts)} 段。"
+            )
+
+        for index, part in enumerate(parts, start=1):
+            if verbose:
+                print(
+                    f"[preprocess] 开始总结第 {index}/{len(parts)} 段，原文长度 {len(part)} 字符，目标 <= {summary_chars} 字。"
+                )
+            fallback = part[:summary_chars]
+            summary = self.llm.long_chat(
+                system_prompt="你是长篇小说压缩编辑，只输出中文剧情总结正文，不输出解释。",
+                user_prompt=(
+                    f"请将下面这段超长小说内容压缩总结为不超过{summary_chars}字。"
+                    "要求：保留关键人物、冲突推进、阶段性结果、未解悬念，按连贯叙事写成一段。\n\n"
+                    f"原文片段：\n{part}"
+                ),
+                fallback=fallback,
+            ).strip()
+            summaries.append(summary)
+            if verbose:
+                print(
+                    f"[preprocess] 完成第 {index}/{len(parts)} 段总结，摘要长度 {len(summary)} 字符。"
+                )
+
+        merged_summary = "\n\n".join(summaries)
+        if verbose:
+            print(
+                f"[preprocess] 预拆分总结完成：{len(parts)} 段原文 => {len(summaries)} 段摘要，总长度 {len(merged_summary)} 字符。"
+            )
+        return merged_summary
+
 
 def run_pipeline_to_file(
     source_text: str,
@@ -124,12 +181,18 @@ def run_pipeline_to_file(
     user_style: str = "",
     max_output_chars: int | None = None,
     recursive_steps: int = DEFAULT_RECURSIVE_STEPS,
+    pre_split_chars: int = DEFAULT_PRE_SPLIT_CHARS,
+    pre_summary_chars: int = DEFAULT_PRE_SUMMARY_CHARS,
+    verbose_preprocess: bool = True,
 ) -> PipelineOutput:
     output = XianxiaPipeline(db).run(
         source_text,
         user_style=user_style,
         max_output_chars=max_output_chars,
         recursive_steps=recursive_steps,
+        pre_split_chars=pre_split_chars,
+        pre_summary_chars=pre_summary_chars,
+        verbose_preprocess=verbose_preprocess,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     merged_text = output.merged_text

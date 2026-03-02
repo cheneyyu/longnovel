@@ -6,6 +6,8 @@ import argparse
 from pathlib import Path
 
 from config import (
+    DEFAULT_PRE_SPLIT_CHARS,
+    DEFAULT_PRE_SUMMARY_CHARS,
     DEFAULT_RECURSIVE_STEPS,
     RESULT_NOVEL_PATH,
     SOURCE_NOVEL_PATH,
@@ -36,6 +38,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Extra continuation rounds after source chunks are finished.",
     )
+    parser.add_argument(
+        "--pre-split-chars",
+        type=int,
+        default=DEFAULT_PRE_SPLIT_CHARS,
+        help="When input exceeds this size, split source text into large parts before chunking.",
+    )
+    parser.add_argument(
+        "--pre-summary-chars",
+        type=int,
+        default=DEFAULT_PRE_SUMMARY_CHARS,
+        help="Per-part summary target size used during large-input pre-processing.",
+    )
+    parser.add_argument(
+        "--quiet-preprocess",
+        action="store_true",
+        help="Disable verbose logs for large-input split/summarization.",
+    )
     return parser
 
 
@@ -63,6 +82,9 @@ def main() -> None:
         user_style=user_style,
         max_output_chars=args.max_output_chars,
         recursive_steps=args.recursive_steps if args.recursive_steps is not None else DEFAULT_RECURSIVE_STEPS,
+        pre_split_chars=args.pre_split_chars,
+        pre_summary_chars=args.pre_summary_chars,
+        verbose_preprocess=not args.quiet_preprocess,
     )
     print(f"Generated {len(output.chunk_results)} chunk(s).")
     if args.max_output_chars is not None:
