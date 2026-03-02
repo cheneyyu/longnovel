@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from chunker import TextChunk
 from database import DatabaseManager
+from llm import LLMRouter
 
 
 @dataclass(slots=True)
@@ -29,6 +30,9 @@ class GenerationResult:
 class StyleAgent:
     """Converts user style preference into a normalized writing guide."""
 
+    def __init__(self, llm: LLMRouter):
+        self.llm = llm
+
     def create_style_guide(self, user_style: str = "") -> str:
         base = (
             "使用中文第三人称叙事，长篇连载节奏，章节结尾保留悬念；"
@@ -36,19 +40,27 @@ class StyleAgent:
         )
         custom = user_style.strip()
         if not custom:
-            return base
-        if len(custom) < 20:
-            return f"{base} 用户补充风格：{custom}（其余由系统补全）。"
-        return f"{base} 用户详细风格：{custom}"
+            fallback = base
+        elif len(custom) < 20:
+            fallback = f"{base} 用户补充风格：{custom}（其余由系统补全）。"
+        else:
+            fallback = f"{base} 用户详细风格：{custom}"
+
+        return self.llm.fast_chat(
+            system_prompt="你是网文改编编辑，请把输入风格整理为可执行写作规则，控制在120字以内。",
+            user_prompt=f"用户风格需求：{custom or '未提供'}\n请输出：叙事视角、节奏、段落风格、章节收束方式。",
+            fallback=fallback,
+        )
 
 
 class CharacterAgent:
     """Tracks characters from DB and current chunk to maintain role consistency."""
 
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: DatabaseManager, llm: LLMRouter):
         characters = db.fetch_characters()
         self.character_rows = characters
         self.name_map = {row["original_name"]: row["xianxia_name"] for row in characters}
+        self.llm = llm
 
     def update_memory(self, chunk: TextChunk, memory: StoryMemory) -> list[str]:
         notes: list[str] = []
@@ -58,17 +70,30 @@ class CharacterAgent:
             if re.search(rf"\b{re.escape(original)}\b", chunk.text):
                 memory.known_characters[adapted] = row
                 notes.append(f"{adapted}({row['sect']}, {row['cultivation_level']}, {row['status']})")
-        return notes
+
+        fallback = notes if notes else ["延续上一章角色目标与关系张力"]
+        role_card = self.llm.fast_chat(
+            system_prompt="你是小说角色统筹，请根据人物库与当前片段生成一条简短角色卡更新。",
+            user_prompt=(
+                f"人物库：{self.character_rows}\n"
+                f"当前片段：{chunk.text[:1000]}\n"
+                f"已知角色记忆：{list(memory.known_characters.keys())}\n"
+                "输出1-2条，每条一句，强调动机/关系/风险。"
+            ),
+            fallback="；".join(fallback),
+        )
+        return [line.strip("-• ") for line in role_card.splitlines() if line.strip()] or fallback
 
 
 class AdaptationAgent:
     """Rule-based generator that applies term mapping and story memory."""
 
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: DatabaseManager, llm: LLMRouter):
         world_map = db.fetch_world_map()
         characters = db.fetch_characters()
         self.term_map = {row["original_term"]: row["xianxia_term"] for row in world_map}
         self.name_map = {row["original_name"]: row["xianxia_name"] for row in characters}
+        self.llm = llm
 
     def generate(self, chunk: TextChunk, memory: StoryMemory, role_notes: list[str]) -> str:
         text = chunk.text
@@ -85,17 +110,35 @@ class AdaptationAgent:
         )
         if chunk.context:
             prefix += f"[Context Window] {chunk.context}\n"
-        return f"{prefix}{text}"
+        fallback = f"{prefix}{text}"
+        return self.llm.long_chat(
+            system_prompt=(
+                "你是长篇网文改编作者。请根据角色卡、上下文和风格，将输入片段改写为更具网文张力的章节片段。"
+                "保留专有名词映射，不要丢失关键信息。"
+            ),
+            user_prompt=(
+                f"{prefix}"
+                f"[Mapped Source]\n{text}\n"
+                "要求：输出中文；有明显情节推进；结尾保留悬念。"
+            ),
+            fallback=fallback,
+        )
 
 
 class ContinuityAgent:
     """Produces compact memory summary for each generated fragment."""
 
+    def __init__(self, llm: LLMRouter):
+        self.llm = llm
+
     def summarize(self, revised_text: str) -> str:
         clean = revised_text.replace("\n", " ").strip()
-        if len(clean) <= 100:
-            return clean
-        return clean[:100] + "..."
+        fallback = clean if len(clean) <= 100 else clean[:100] + "..."
+        return self.llm.fast_chat(
+            system_prompt="你是剧情连续性助手，请把片段提炼为下一段可用的短记忆。",
+            user_prompt=f"请在80字内总结剧情推进、角色状态变化和悬念：\n{clean[:2000]}",
+            fallback=fallback,
+        )
 
 
 class CriticAgent:
