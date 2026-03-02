@@ -13,6 +13,7 @@ OUTPUT_DIR = BASE_DIR / "output"
 
 # Core files
 SOURCE_NOVEL_PATH = INPUT_DIR / "novel.txt"
+STYLE_PROMPT_PATH = INPUT_DIR / "style.txt"
 RESULT_NOVEL_PATH = OUTPUT_DIR / "result_xianxia.txt"
 SQLITE_DB_PATH = DATA_DIR / "xianxia_state.db"
 JSON_DB_PATH = DATA_DIR / "xianxia_state.json"
