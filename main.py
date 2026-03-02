@@ -2,12 +2,33 @@
 
 from __future__ import annotations
 
+import argparse
+from pathlib import Path
+
 from config import RESULT_NOVEL_PATH, SOURCE_NOVEL_PATH, STYLE_PROMPT_PATH, ensure_project_dirs
 from database import bootstrap_database
 from graph import run_pipeline_to_file
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run longnovel adaptation pipeline.")
+    parser.add_argument(
+        "--max-output-chars",
+        type=int,
+        default=None,
+        help="Optional upper bound for output characters (e.g. 20000 for a preview run).",
+    )
+    parser.add_argument(
+        "--output-path",
+        type=Path,
+        default=RESULT_NOVEL_PATH,
+        help="Path to the generated output file.",
+    )
+    return parser
+
+
 def main() -> None:
+    args = build_parser().parse_args()
     ensure_project_dirs()
     db = bootstrap_database()
 
@@ -23,9 +44,17 @@ def main() -> None:
 
     source_text = SOURCE_NOVEL_PATH.read_text(encoding="utf-8")
     user_style = STYLE_PROMPT_PATH.read_text(encoding="utf-8")
-    output = run_pipeline_to_file(source_text, RESULT_NOVEL_PATH, db, user_style=user_style)
+    output = run_pipeline_to_file(
+        source_text,
+        args.output_path,
+        db,
+        user_style=user_style,
+        max_output_chars=args.max_output_chars,
+    )
     print(f"Generated {len(output.chunk_results)} chunk(s).")
-    print(f"Result saved to: {RESULT_NOVEL_PATH}")
+    if args.max_output_chars is not None:
+        print(f"Preview mode enabled. Output capped at {args.max_output_chars} chars.")
+    print(f"Result saved to: {args.output_path}")
 
 
 if __name__ == "__main__":

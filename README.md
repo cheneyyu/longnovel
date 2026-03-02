@@ -73,6 +73,15 @@ PY
 # 3) 运行：角色卡、情节推进、连续性摘要都通过 LLM 生成
 !python main.py
 !sed -n '1,120p' output/result_xianxia.txt
+
+# 4) 分步预览：先生成前 20000 字符，再决定是否全量跑
+!python main.py --max-output-chars 20000 --output-path output/preview_20000.txt
+!python - <<'PY'
+from pathlib import Path
+preview = Path('output/preview_20000.txt').read_text(encoding='utf-8')
+print('preview chars:', len(preview))
+print(preview[:600])
+PY
 ```
 
 > 说明：此流程会同时使用 fast/cheap 模型（风格整理、角色卡更新、连续性摘要）和 long/pro 模型（正文改写）。
@@ -103,3 +112,14 @@ PY
 ```bash
 python main.py
 ```
+
+## 分步生成（先看前 20000 字符）
+
+```bash
+python main.py --max-output-chars 20000 --output-path output/preview_20000.txt
+```
+
+说明：
+
+- `--max-output-chars`：限制写入文件的最大字符数，适合 Colab 先看预览。
+- `--output-path`：可把预览和全量结果分开保存，便于对比。
