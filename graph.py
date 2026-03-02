@@ -19,6 +19,7 @@ from chunker import chunk_text
 from config import MAX_CRITIC_RETRIES
 from database import DatabaseManager
 from llm import LLMRouter
+from preprocess import clean_source_novel
 
 
 @dataclass(slots=True)
@@ -48,7 +49,8 @@ class XianxiaPipeline:
         user_style: str = "",
         critic_retries: int = MAX_CRITIC_RETRIES,
     ) -> PipelineOutput:
-        chunks = chunk_text(source_text)
+        cleaned_source = clean_source_novel(source_text)
+        chunks = chunk_text(cleaned_source)
         results: list[GenerationResult] = []
         memory = StoryMemory(style_guide=self.style_agent.create_style_guide(user_style))
 
