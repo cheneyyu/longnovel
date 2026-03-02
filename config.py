@@ -1,4 +1,4 @@
-"""Configuration for the Xianxia transformation pipeline."""
+"""Configuration for the long-novel transformation pipeline."""
 
 from __future__ import annotations
 
@@ -14,7 +14,9 @@ OUTPUT_DIR = BASE_DIR / "output"
 # Core files
 SOURCE_NOVEL_PATH = INPUT_DIR / "novel.txt"
 STYLE_PROMPT_PATH = INPUT_DIR / "style.txt"
-RESULT_NOVEL_PATH = OUTPUT_DIR / "result_xianxia.txt"
+SETTING_PATH = OUTPUT_DIR / "setting.txt"
+PLAN_PATH = OUTPUT_DIR / "plan.txt"
+RESULT_NOVEL_PATH = OUTPUT_DIR / "result_novel.txt"
 SQLITE_DB_PATH = DATA_DIR / "xianxia_state.db"
 JSON_DB_PATH = DATA_DIR / "xianxia_state.json"
 
