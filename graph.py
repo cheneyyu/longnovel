@@ -18,6 +18,7 @@ from agents import (
 from chunker import chunk_text
 from config import MAX_CRITIC_RETRIES
 from database import DatabaseManager
+from llm import LLMRouter
 
 
 @dataclass(slots=True)
@@ -32,11 +33,12 @@ class PipelineOutput:
 class XianxiaPipeline:
     """Coordinates chunking -> multi-agent generate -> critique -> revision."""
 
-    def __init__(self, db: DatabaseManager):
-        self.style_agent = StyleAgent()
-        self.character_agent = CharacterAgent(db)
-        self.adapt = AdaptationAgent(db)
-        self.continuity_agent = ContinuityAgent()
+    def __init__(self, db: DatabaseManager, llm: LLMRouter | None = None):
+        self.llm = llm or LLMRouter()
+        self.style_agent = StyleAgent(self.llm)
+        self.character_agent = CharacterAgent(db, self.llm)
+        self.adapt = AdaptationAgent(db, self.llm)
+        self.continuity_agent = ContinuityAgent(self.llm)
         self.critic = CriticAgent()
         self.revisor = RevisionAgent()
 
