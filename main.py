@@ -5,7 +5,13 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from config import RESULT_NOVEL_PATH, SOURCE_NOVEL_PATH, STYLE_PROMPT_PATH, ensure_project_dirs
+from config import (
+    DEFAULT_RECURSIVE_STEPS,
+    RESULT_NOVEL_PATH,
+    SOURCE_NOVEL_PATH,
+    STYLE_PROMPT_PATH,
+    ensure_project_dirs,
+)
 from database import bootstrap_database
 from graph import run_pipeline_to_file
 
@@ -23,6 +29,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=RESULT_NOVEL_PATH,
         help="Path to the generated output file.",
+    )
+    parser.add_argument(
+        "--recursive-steps",
+        type=int,
+        default=None,
+        help="Extra continuation rounds after source chunks are finished.",
     )
     return parser
 
@@ -50,6 +62,7 @@ def main() -> None:
         db,
         user_style=user_style,
         max_output_chars=args.max_output_chars,
+        recursive_steps=args.recursive_steps if args.recursive_steps is not None else DEFAULT_RECURSIVE_STEPS,
     )
     print(f"Generated {len(output.chunk_results)} chunk(s).")
     if args.max_output_chars is not None:

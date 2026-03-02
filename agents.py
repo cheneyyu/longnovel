@@ -124,6 +124,31 @@ class AdaptationAgent:
             fallback=fallback,
         )
 
+    def generate_recursive(self, memory: StoryMemory, role_notes: list[str], previous_text: str) -> str:
+        continuity = "；".join(role_notes) if role_notes else "沿用上一段叙事焦点"
+        summary_context = "\n".join(memory.chunk_summaries[-3:]) if memory.chunk_summaries else "暂无前情，直接从冲突起势。"
+        seed = previous_text[-1200:].strip()
+        fallback = (
+            "【离线续写草稿】未检测到可用LLM，以下为续写占位段落：\n"
+            "危机并未结束，新的线索把众人推向更深的局中局，真正的敌意才刚刚显形。"
+        )
+
+        return self.llm.long_chat(
+            system_prompt=(
+                "你是中文仙侠网文连载作者。"
+                "只输出正文，不要解释，不要编号，不要出现系统标记。"
+            ),
+            user_prompt=(
+                f"写作规则：{memory.style_guide}\n"
+                f"角色连续性：{continuity}\n"
+                f"最近前情摘要：{summary_context}\n"
+                f"上一段正文（截断）：{seed}\n"
+                "请在不重复已有内容的前提下，继续推进剧情，新增有效事件与冲突升级，"
+                "并以新的悬念收束本段。"
+            ),
+            fallback=fallback,
+        )
+
 
 class ContinuityAgent:
     """Produces compact memory summary for each generated fragment."""

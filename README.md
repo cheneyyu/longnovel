@@ -123,3 +123,4 @@ python main.py --max-output-chars 20000 --output-path output/preview_20000.txt
 
 - `--max-output-chars`：限制写入文件的最大字符数，适合 Colab 先看预览。
 - `--output-path`：可把预览和全量结果分开保存，便于对比。
+- `--recursive-steps`：在原文分块处理完后，基于剧情记忆继续递归续写 N 段（默认 2），用于避免结果过短。
