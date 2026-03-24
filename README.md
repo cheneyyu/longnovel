@@ -26,12 +26,15 @@ Multi-agent Python pipeline for transforming a source novel into a Chinese web-n
 
 1. Python 3.10+
 2. 可选设置环境变量：
-   - `ai_api`（优先，等价 API Key）
-   - `ai_url`（优先，默认 `https://api.vveai.com/v1`）
-   - `OPENAI_API_KEY`（兼容）
-   - `OPENAI_BASE_URL`（兼容）
-   - `OPENAI_FAST_MODEL_NAME`
-   - `OPENAI_LONG_MODEL_NAME`
+   - `ai_api_cheap`（优先，cheap 模型 API Key）
+   - `ai_url_cheap`（优先，cheap 模型 base url，默认 `https://api.vveai.com/v1`）
+   - `ai_model_cheap`（优先，cheap 模型名）
+   - `ai_api_heavy`（优先，heavy 模型 API Key，可选）
+   - `ai_url_heavy`（优先，heavy 模型 base url，可选）
+   - `ai_model_heavy`（优先，heavy 模型名）
+   - `ai_api` / `ai_url`（旧变量兼容）
+   - `OPENAI_API_KEY` / `OPENAI_BASE_URL`（兼容）
+   - `OPENAI_FAST_MODEL_NAME` / `OPENAI_LONG_MODEL_NAME`（兼容）
    - `OPENAI_TEMPERATURE`（可选，建议 `1.0`）
 
 ```bash
@@ -59,10 +62,12 @@ python main.py
 
 # 1) 设置 OpenAI 兼容 API（同一个 base url，下挂两个模型）
 import os
-os.environ["OPENAI_API_KEY"] = "<your-api-key>"
-os.environ["OPENAI_BASE_URL"] = "https://<your-openai-compatible-endpoint>/v1"
-os.environ["OPENAI_FAST_MODEL_NAME"] = "<fast-cheap-model>"
-os.environ["OPENAI_LONG_MODEL_NAME"] = "<long-context-pro-model>"
+os.environ["ai_api_cheap"] = "<your-cheap-api-key>"
+os.environ["ai_url_cheap"] = "https://<your-cheap-endpoint>/v1"
+os.environ["ai_model_cheap"] = "<fast-cheap-model>"
+os.environ["ai_api_heavy"] = "<your-heavy-api-key>"
+os.environ["ai_url_heavy"] = "https://<your-heavy-endpoint>/v1"
+os.environ["ai_model_heavy"] = "<long-context-pro-model>"
 os.environ["OPENAI_TEMPERATURE"] = "1.0"
 
 # 2) 你自己准备大体量小说 input/novel.txt（语言不限）

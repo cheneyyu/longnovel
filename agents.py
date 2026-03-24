@@ -179,7 +179,7 @@ class AdaptationAgent:
         fallback = (
             "【离线草稿】未检测到可用LLM，以下为待改写片段摘要：\n"
             f"{fallback_excerpt}\n"
-            "（请配置 OPENAI_API_KEY / OPENAI_BASE_URL / 模型名后自动生成中文仙侠改写）"
+            "（请配置 ai_api_cheap / ai_url_cheap / ai_model_cheap（及可选 heavy 变量）后自动生成中文仙侠改写）"
         )
 
         return self.llm.long_chat(
