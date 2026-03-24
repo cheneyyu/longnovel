@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 from chunker import TextChunk
 from database import DatabaseManager
@@ -15,8 +16,13 @@ class StoryMemory:
     """Cross-chunk memory used by agents to keep narrative coherence."""
 
     style_guide: str = ""
+    project_brief: str = ""
+    story_bible: str = ""
+    arc_plan: str = ""
     known_characters: dict[str, dict[str, str]] = field(default_factory=dict)
     chunk_summaries: list[str] = field(default_factory=list)
+    chapter_ledger: list[dict[str, Any]] = field(default_factory=list)
+    foreshadow_ledger: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -42,6 +48,78 @@ class StyleAgent:
             user_prompt=(
                 f"将以下需求整理为80字以内写作规则，偏仙侠改编：{custom or '未提供'}。"
                 "必须包含：叙事视角、节奏、情绪张力、章节收束方式。"
+            ),
+            fallback=fallback,
+        )
+
+
+class RequirementAgent:
+    """Parses loose user input into a compact project brief."""
+
+    def __init__(self, llm: LLMRouter):
+        self.llm = llm
+
+    def build_project_brief(self, user_style: str, source_text: str) -> str:
+        fallback = (
+            "题材:东方玄幻\n"
+            "风格:热血+权谋\n"
+            "节奏:中速推进\n"
+            "目标:长篇连载，单章有钩子\n"
+            "限制:只做结构转译，不贴皮复写"
+        )
+        return self.llm.fast_chat(
+            system_prompt="你是网文项目策划，请输出精炼中文项目规格，不要解释。",
+            user_prompt=(
+                f"用户风格输入：{user_style or '未提供'}\n"
+                f"原文前1200字：{source_text[:1200]}\n"
+                "请输出“创作规格书”，格式固定5行：题材/风格/节奏/目标/限制。"
+            ),
+            fallback=fallback,
+        )
+
+
+class WorldbuildingAgent:
+    """Builds concise world rules and power boundaries."""
+
+    def __init__(self, llm: LLMRouter):
+        self.llm = llm
+
+    def build_story_bible(self, project_brief: str) -> str:
+        fallback = (
+            "世界层级:凡域-灵域-圣域\n"
+            "修炼体系:炼体-聚气-筑基-金丹-元婴\n"
+            "边界规则:跨境最多一阶, 复活需付重大代价\n"
+            "核心矛盾:资源争夺与宗门审判并行\n"
+            "终局方向:揭示上界收割真相"
+        )
+        return self.llm.fast_chat(
+            system_prompt="你是玄幻世界观架构师，只输出中文要点。",
+            user_prompt=(
+                f"创作规格书：\n{project_brief}\n"
+                "请输出5行“世界观圣经摘要”：世界层级/修炼体系/边界规则/核心矛盾/终局方向。"
+            ),
+            fallback=fallback,
+        )
+
+
+class StructureAgent:
+    """Creates arc-level plan for stable long-form pacing."""
+
+    def __init__(self, llm: LLMRouter):
+        self.llm = llm
+
+    def build_arc_plan(self, project_brief: str, story_bible: str) -> str:
+        fallback = (
+            "卷1 微末崛起: 建立仇恨与目标\n"
+            "卷2 宗门立足: 同辈竞争与资源线\n"
+            "卷3 边域争锋: 地图扩大与外敌登场\n"
+            "卷4 旧史真相: 回收前期伏笔并抬升主线"
+        )
+        return self.llm.fast_chat(
+            system_prompt="你是网文结构规划编辑，只输出中文。",
+            user_prompt=(
+                f"规格书：\n{project_brief}\n世界观：\n{story_bible}\n"
+                "请给出4卷压缩卷纲，每卷一行，格式：卷名: 主冲突 + 卷末钩子方向。"
             ),
             fallback=fallback,
         )
@@ -112,6 +190,9 @@ class AdaptationAgent:
             ),
             user_prompt=(
                 f"写作规则：{memory.style_guide}\n"
+                f"项目规格：{memory.project_brief}\n"
+                f"世界设定：{memory.story_bible}\n"
+                f"卷纲参考：{memory.arc_plan}\n"
                 f"角色连续性：{continuity}\n"
                 f"上文窗口：{context_text}\n"
                 f"待改写片段：{text[:4000]}\n"
@@ -140,6 +221,9 @@ class AdaptationAgent:
             ),
             user_prompt=(
                 f"写作规则：{memory.style_guide}\n"
+                f"项目规格：{memory.project_brief}\n"
+                f"世界设定：{memory.story_bible}\n"
+                f"卷纲参考：{memory.arc_plan}\n"
                 f"角色连续性：{continuity}\n"
                 f"最近前情摘要：{summary_context}\n"
                 f"上一段正文（截断）：{seed}\n"
@@ -164,6 +248,33 @@ class ContinuityAgent:
             user_prompt=f"请用60字内总结本段的事件推进、角色变化和未解悬念：{clean[:1500]}",
             fallback=fallback,
         )
+
+
+class MemoryCompressionAgent:
+    """Writes structured chapter-state ledger entries."""
+
+    def __init__(self, llm: LLMRouter):
+        self.llm = llm
+
+    def build_ledger_entry(self, chapter_index: int, text: str, role_notes: list[str]) -> dict[str, Any]:
+        fallback = (
+            f"章节{chapter_index}：事件推进；角色关系变化；埋下后续悬念。"
+        )
+        summary = self.llm.fast_chat(
+            system_prompt="你是剧情账本记录员，只输出中文单段，不要解释。",
+            user_prompt=(
+                f"章节编号：{chapter_index}\n"
+                f"角色线索：{'；'.join(role_notes) if role_notes else '无'}\n"
+                f"正文：{text[:1500]}\n"
+                "请输出120字以内摘要，包含：事件推进+状态变化+下章接口。"
+            ),
+            fallback=fallback,
+        )
+        return {
+            "chapter": chapter_index,
+            "summary": summary.strip(),
+            "roles": role_notes[:],
+        }
 
 
 class CriticAgent:

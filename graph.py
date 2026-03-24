@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,9 +12,13 @@ from agents import (
     ContinuityAgent,
     CriticAgent,
     GenerationResult,
+    MemoryCompressionAgent,
+    RequirementAgent,
     RevisionAgent,
     StoryMemory,
+    StructureAgent,
     StyleAgent,
+    WorldbuildingAgent,
 )
 from chunker import chunk_text
 from config import (
@@ -30,6 +35,10 @@ from preprocess import clean_source_novel
 @dataclass(slots=True)
 class PipelineOutput:
     chunk_results: list[GenerationResult]
+    project_brief: str = ""
+    story_bible: str = ""
+    arc_plan: str = ""
+    chapter_ledger: list[dict] | None = None
 
     @property
     def merged_text(self) -> str:
@@ -42,9 +51,13 @@ class XianxiaPipeline:
     def __init__(self, db: DatabaseManager, llm: LLMRouter | None = None):
         self.llm = llm or LLMRouter()
         self.style_agent = StyleAgent(self.llm)
+        self.requirement_agent = RequirementAgent(self.llm)
+        self.world_agent = WorldbuildingAgent(self.llm)
+        self.structure_agent = StructureAgent(self.llm)
         self.character_agent = CharacterAgent(db, self.llm)
         self.adapt = AdaptationAgent(db, self.llm)
         self.continuity_agent = ContinuityAgent(self.llm)
+        self.memory_compressor = MemoryCompressionAgent(self.llm)
         self.critic = CriticAgent()
         self.revisor = RevisionAgent()
 
@@ -68,7 +81,16 @@ class XianxiaPipeline:
         )
         chunks = chunk_text(cleaned_source)
         results: list[GenerationResult] = []
-        memory = StoryMemory(style_guide=self.style_agent.create_style_guide(user_style))
+        style_guide = self.style_agent.create_style_guide(user_style)
+        project_brief = self.requirement_agent.build_project_brief(user_style, cleaned_source)
+        story_bible = self.world_agent.build_story_bible(project_brief)
+        arc_plan = self.structure_agent.build_arc_plan(project_brief, story_bible)
+        memory = StoryMemory(
+            style_guide=style_guide,
+            project_brief=project_brief,
+            story_bible=story_bible,
+            arc_plan=arc_plan,
+        )
 
         for chunk in chunks:
             role_notes = self.character_agent.update_memory(chunk, memory)
@@ -83,6 +105,9 @@ class XianxiaPipeline:
                 retries += 1
 
             memory.chunk_summaries.append(self.continuity_agent.summarize(revised))
+            memory.chapter_ledger.append(
+                self.memory_compressor.build_ledger_entry(chunk.index, revised, role_notes)
+            )
             results.append(
                 GenerationResult(
                     chunk_index=chunk.index,
@@ -119,6 +144,9 @@ class XianxiaPipeline:
                     retries += 1
 
                 memory.chunk_summaries.append(self.continuity_agent.summarize(revised))
+                memory.chapter_ledger.append(
+                    self.memory_compressor.build_ledger_entry(len(chunks) + step + 1, revised, role_notes)
+                )
                 results.append(
                     GenerationResult(
                         chunk_index=len(chunks) + step + 1,
@@ -128,7 +156,13 @@ class XianxiaPipeline:
                     )
                 )
 
-        return PipelineOutput(chunk_results=results)
+        return PipelineOutput(
+            chunk_results=results,
+            project_brief=memory.project_brief,
+            story_bible=memory.story_bible,
+            arc_plan=memory.arc_plan,
+            chapter_ledger=memory.chapter_ledger,
+        )
 
     def _compress_large_source(self, text: str, split_chars: int, summary_chars: int, verbose: bool) -> str:
         if not text.strip() or len(text) <= split_chars:
@@ -199,4 +233,18 @@ def run_pipeline_to_file(
     if max_output_chars is not None:
         merged_text = merged_text[:max_output_chars]
     output_path.write_text(merged_text, encoding="utf-8")
+    sidecar_path = output_path.with_suffix(output_path.suffix + ".state.json")
+    sidecar_path.write_text(
+        json.dumps(
+            {
+                "project_brief": output.project_brief,
+                "story_bible": output.story_bible,
+                "arc_plan": output.arc_plan,
+                "chapter_ledger": output.chapter_ledger or [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     return output
