@@ -26,8 +26,10 @@ Multi-agent Python pipeline for transforming a source novel into a Chinese web-n
 
 1. Python 3.10+
 2. 可选设置环境变量：
-   - `OPENAI_API_KEY`
-   - `OPENAI_BASE_URL`
+   - `ai_api`（优先，等价 API Key）
+   - `ai_url`（优先，默认 `https://api.vveai.com/v1`）
+   - `OPENAI_API_KEY`（兼容）
+   - `OPENAI_BASE_URL`（兼容）
    - `OPENAI_FAST_MODEL_NAME`
    - `OPENAI_LONG_MODEL_NAME`
    - `OPENAI_TEMPERATURE`（可选，建议 `1.0`）
@@ -42,6 +44,7 @@ python main.py
 - `input/novel.txt`（示例原文）
 - `input/style.txt`（风格描述，可写“简单描述”或“详细描述”）
 - `output/result_xianxia.txt`（改编结果）
+- `output/result_xianxia.txt.state.json`（项目规格/世界观/卷纲/章节状态账本）
 
 ## Colab 示例
 
