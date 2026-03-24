@@ -11,6 +11,8 @@ from config import (
     OPENAI_API_KEY,
     OPENAI_BASE_URL,
     OPENAI_FAST_MODEL_NAME,
+    OPENAI_HEAVY_API_KEY,
+    OPENAI_HEAVY_BASE_URL,
     OPENAI_LONG_MODEL_NAME,
     OPENAI_TEMPERATURE,
 )
@@ -20,8 +22,10 @@ from config import (
 class LLMRouter:
     """Small helper for calling OpenAI-compatible chat completion APIs."""
 
-    api_key: str = OPENAI_API_KEY
-    base_url: str = OPENAI_BASE_URL
+    cheap_api_key: str = OPENAI_API_KEY
+    cheap_base_url: str = OPENAI_BASE_URL
+    heavy_api_key: str = OPENAI_HEAVY_API_KEY
+    heavy_base_url: str = OPENAI_HEAVY_BASE_URL
     fast_model: str = OPENAI_FAST_MODEL_NAME
     long_model: str = OPENAI_LONG_MODEL_NAME
     temperature: float = OPENAI_TEMPERATURE
@@ -29,19 +33,33 @@ class LLMRouter:
 
     @property
     def enabled(self) -> bool:
-        return bool(self.api_key and self.base_url)
+        return bool(self.cheap_api_key and self.cheap_base_url)
 
     def fast_chat(self, system_prompt: str, user_prompt: str, fallback: str) -> str:
-        return self._chat(self.fast_model, system_prompt, user_prompt, fallback)
+        return self._chat(
+            model=self.fast_model,
+            api_key=self.cheap_api_key,
+            base_url=self.cheap_base_url,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            fallback=fallback,
+        )
 
     def long_chat(self, system_prompt: str, user_prompt: str, fallback: str) -> str:
-        return self._chat(self.long_model, system_prompt, user_prompt, fallback)
+        return self._chat(
+            model=self.long_model,
+            api_key=self.heavy_api_key,
+            base_url=self.heavy_base_url,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            fallback=fallback,
+        )
 
-    def _chat(self, model: str, system_prompt: str, user_prompt: str, fallback: str) -> str:
-        if not self.enabled:
+    def _chat(self, model: str, api_key: str, base_url: str, system_prompt: str, user_prompt: str, fallback: str) -> str:
+        if not (api_key and base_url):
             return fallback
 
-        url = self.base_url.rstrip("/") + "/chat/completions"
+        url = base_url.rstrip("/") + "/chat/completions"
         payload = {
             "model": model,
             "temperature": self.temperature,
@@ -56,7 +74,7 @@ class LLMRouter:
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
+                "Authorization": f"Bearer {api_key}",
             },
             method="POST",
         )
